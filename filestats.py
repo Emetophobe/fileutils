@@ -6,77 +6,6 @@
 import os
 import sys
 import argparse
-import time
-
-
-def stat_dir(path, recursive=True, symlinks=True, dotfiles=False):
-    """ Recursively yield file entries from the specified path. """
-    try:
-        scanit = os.scandir(os.path.abspath(path))  # Always use absolute paths
-    except OSError as e:
-        print(f'Error reading {e.filename} ({e.strerror})', flush=True, file=sys.stderr)
-        return
-
-    with scanit:
-        while True:
-            try:
-                # Get the next DirEntry object
-                entry = next(scanit)
-
-                # Ignore dot files?
-                if not dotfiles and entry.name.startswith('.'):
-                    continue
-
-                # Is it a symlink?
-                try:
-                    is_symlink = entry.is_symlink()
-                except OSError:  # same behaviour as os.path.islink()
-                    is_symlink = False
-
-                if is_symlink and not symlinks:
-                    continue
-
-                # Is it a directory?
-                try:
-                    is_dir = entry.is_dir()
-                except OSError:  # same behaviour as os.path.isdir()
-                    is_dir = False
-
-                # Recursively search subdirs for files
-                if is_dir and recursive:
-                    yield from stat_dir(entry.path, recursive, symlinks, dotfiles)
-
-                # Yield every file entry that is found
-                elif entry.is_file():
-                    yield entry
-
-            except OSError as e:
-                print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
-                continue
-
-            except StopIteration:
-                break
-
-
-def file_stats(path, displayed_stats, symlinks=False, dotfiles=False):
-    """ Generator which yields file paths and their stats. """
-    def _stats_to_tuple(stat_result):
-        return tuple(getattr(stat_result, st) for st in displayed_stats)
-
-    if os.path.isdir(path):
-        # Scan the entire directory tree
-        for entry in stat_dir(path, symlinks=symlinks, dotfiles=dotfiles):
-            yield (entry.path,) + _stats_to_tuple(entry.stat())
-    elif os.path.isfile(path):
-        # Stat a single file
-        yield (os.path.abspath(path),) + _stats_to_tuple(os.stat(path))
-    else:
-        raise ValueError(f'Invalid path: {path}')
-
-
-#
-# _internal stuff used by argparse
-#
 
 
 # Default stats to display if none are specified
@@ -94,161 +23,226 @@ DEFAULT_STATS = (
 )
 
 
-# Dictionary of stats and their descriptions
-ALL_STATS = {
-    # Attributes available on all plaforms
-    'st_mode': 'file type and file mode bits (permissions).',
-    'st_ino': 'inode number on Unix or file index on Windows',
-    'st_dev': 'identifier of the device',
-    'st_nlink': 'number of hard links',
-    'st_uid': 'user identifier of the file owner',
-    'st_gid': 'group identifier of the file owner',
-    'st_size': 'file size in bytes',
-    'st_atime': 'last access time in seconds',
-    'st_mtime': 'last modified time in seconds',
-    'st_ctime': 'creation time in seconds',
-    'st_atime_ns': 'last access time in nanoseconds',
-    'st_mtime_ns': 'last modified time in nanoseconds',
-    'st_ctime_ns': 'creation time in nanoseconds',
+def walk_tree(path, symlinks=False, dotfiles=False, recursive=True):
+    """ Recursively yield file entries from the specified path. """
+    with os.scandir(path) as scanit:
+        while True:
+            try:
+                # Get the next DirEntry object
+                entry = next(scanit)
 
-    # Unix-specific attributes
-    'st_blocks': 'number of blocks allocated for the file',
-    'st_blksize': 'prefered blocksize',
-    'st_rdev': 'type of device if an inode device',
-    'st_flags': 'user defined flags for the file',
-    'st_gen': 'file generation number',
-    'st_birthtime': 'time of file creation',
+                # Ignore dot files?
+                if not dotfiles and entry.name.startswith('.'):
+                    continue
 
-    # Solaris-specific attributes
-    'st_fstype': 'filesystem type that contains the file',
+                # Is it a directory?
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=symlinks)
+                except OSError:  # same behaviour as os.path.isdir()
+                    is_dir = False
 
-    # MacOS-specific attributes
-    'st_rsize': 'real size of the file',
-    'st_creator': 'creator of the file',
-    'st_type': 'file type',
+                # Recursively search subdirs for files
+                if is_dir and recursive:
+                    yield from walk_tree(entry.path, symlinks, dotfiles, recursive)
 
-    # Windows-specific attributes
-    'st_file_attributes': 'windows file attributes',
-    'st_reparse_tag': 'tag identifying the type of reparse point',
-}
+                # Yield every file entry that is found
+                elif entry.is_file(follow_symlinks=symlinks):
+                    yield entry
+
+            except OSError as e:
+                print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
+                continue
+
+            except StopIteration:
+                break
 
 
-def _detect_attributes():
-    """ Get dictionary of attributes supported by the current system. """
-    test_stats = dir(os.stat(__file__))
-    return {k: v for k, v in ALL_STATS.items() if k in test_stats}
+def stat_path(path, display_stats, symlinks=False, dotfiles=False):
+    """ Yield file stats from the specified path. """
+    def stats_to_tuple(stat_result):
+        # Helper to convert a stat_result object into a tuple
+        return tuple(getattr(stat_result, st) for st in display_stats)
+
+    if os.path.isfile(path):
+        yield (path,) + stats_to_tuple(os.stat(path))
+    elif os.path.isdir(path):
+        for entry in walk_tree(path, symlinks=symlinks, dotfiles=dotfiles, recursive=True):
+            yield (entry.path,) + stats_to_tuple(entry.stat())
+    else:
+        raise ValueError('Invalid path')
 
 
-# Store dictionary of supported attributes
-SUPPORTED_ATTRIBUTES = _detect_attributes()
+class ArgumentBuilder:
 
+    ALL_STATS = {
+        # Attributes available on all plaforms
+        'st_mode': 'file type and file mode bits (permissions).',
+        'st_ino': 'inode number on Unix or file index on Windows',
+        'st_dev': 'identifier of the device',
+        'st_nlink': 'number of hard links',
+        'st_uid': 'user identifier of the file owner',
+        'st_gid': 'group identifier of the file owner',
+        'st_size': 'file size in bytes',
+        'st_atime': 'last access time in seconds',
+        'st_mtime': 'last modified time in seconds',
+        'st_ctime': 'creation time in seconds',
+        'st_atime_ns': 'last access time in nanoseconds',
+        'st_mtime_ns': 'last modified time in nanoseconds',
+        'st_ctime_ns': 'creation time in nanoseconds',
 
-def _parse_args():
-    parser = argparse.ArgumentParser()
+        # Unix-specific attributes
+        'st_blocks': 'number of blocks allocated for the file',
+        'st_blksize': 'prefered blocksize',
+        'st_rdev': 'type of device if an inode device',
+        'st_flags': 'user defined flags for the file',
+        'st_gen': 'file generation number',
+        'st_birthtime': 'time of file creation',
 
-    parser.add_argument(
-        'path',
-        help='file or directory path',
-    )
+        # Solaris-specific attributes
+        'st_fstype': 'filesystem type that contains the file',
 
-    parser.add_argument(
-        '-d', '--dotfiles',
-        help='show dot files and directories',
-        action='store_true'
-    )
+        # MacOS-specific attributes
+        'st_rsize': 'real size of the file',
+        'st_creator': 'creator of the file',
+        'st_type': 'file type',
 
-    parser.add_argument(
-        '-s', '--symlinks',
-        help='follow symbolic links',
-        action='store_true'
-    )
+        # Windows-specific attributes
+        'st_file_attributes': 'windows file attributes',
+        'st_reparse_tag': 'tag identifying the type of reparse point',
+    }
 
-    stats_group = parser.add_argument_group('file stats')
+    def __init__(self):
+        # Get dictionary of stats supported by the current system
+        self.supported_stats = self.get_supported_stats()
 
-    stats_group.add_argument(
-        '-a', '--attributes',
-        help=f'select which stats to display (default: {", ".join(DEFAULT_STATS)})',
-        nargs='+'
-    )
+    def parse_args(self) -> argparse.Namespace:
+        self.parser = argparse.ArgumentParser()
 
-    stats_group.add_argument(
-        '--all',
-        help='show all stats',
-        action='store_true'
-    )
-
-    # Add the supported attributes
-    for name, help_text in SUPPORTED_ATTRIBUTES.items():
-        stats_group.add_argument(
-            f'--{name.removeprefix("st_")}',  # use short form (i.e --dev instead of --st_dev)
-            dest=name,
-            help=help_text,
-            action='store_true',
-            default=argparse.SUPPRESS  # This preserves the order that the user specified
+        self.parser.add_argument(
+            'path',
+            help='file or directory path',
+            type=os.path.abspath,  # Use absolute paths
         )
 
-    return (parser.parse_args(), parser)
+        self.parser.add_argument(
+            '-d', '--dotfiles',
+            help='show dot files and directories',
+            action='store_true'
+        )
 
+        self.parser.add_argument(
+            '-l', '--symlinks',
+            help='follow symbolic links',
+            action='store_true'
+        )
 
-def _build_from_attributes(attributes: list) -> tuple:
-    tracked_stats = set()
-    for attribute in attributes:
-        attribute = attribute.rstrip(',')
-        for st_key in SUPPORTED_ATTRIBUTES.keys():
-            if attribute.removeprefix('st_') == st_key.removeprefix('st_'):
-                if st_key in tracked_stats:
-                    raise ValueError(f'Duplicate attribute: {attribute}')
-                tracked_stats.add(st_key)
-                break
+        self.stats_group = self.parser.add_argument_group('file stats')
+
+        self.stats_group.add_argument(
+            '-a', '--all',
+            help='show all stats',
+            action='store_true'
+        )
+
+        self.stats_group.add_argument(
+            '-s', '--stats',
+            help=f'select which stats to display (default: {", ".join(DEFAULT_STATS)})',
+            nargs='+'
+        )
+
+        # Add all the supported stat arguments (--mtime, --size, etc..)
+        for name, description in self.supported_stats.items():
+            self.stats_group.add_argument(
+                f'--{name.removeprefix("st_")}',  # use short form (i.e --dev instead of --st_dev)
+                dest=name,
+                help=description,
+                action='store_true',
+                default=argparse.SUPPRESS  # This preserves the order the user entered them
+            )
+
+        # Parse args and do basic validation
+        self.args = self.parser.parse_args()
+
+        # Make sure the path is valid
+        if not os.path.exists(self.args.path):
+            self.parser.error('Invalid path.')
+
+        # Get display stats
+        try:
+            self._build_display_stats()
+        except ValueError as e:
+            self.parser.error(e)
+
+        # All done, return the args namespace
+        return self.args
+
+    def get_supported_stats(self) -> dict:
+        # Get dictionary of stats supported by the current system
+        test_stats = dir(os.stat(__file__))
+        return {k: v for k, v in self.ALL_STATS.items() if k in test_stats}
+
+    def _build_display_stats(self) -> None:
+        # Build tuple of display stats from user arguments
+        if self.args.all:
+            display_stats = self.supported_stats.keys()
+        elif self.args.stats:
+            display_stats = self._build_from_stats()
         else:
-            raise ValueError(f'Unsupported attribute: {attribute}')
+            display_stats = self._build_from_args()
 
-    return tuple(tracked_stats)
+        if not display_stats:
+            display_stats = DEFAULT_STATS
 
+        for stat in display_stats:
+            if stat not in self.supported_stats.keys():
+                raise ValueError(f'Unsupported stat: {stat}')
 
-def _build_from_args(args: dict) -> tuple:
-    tracked_stats = [key for key in args.keys() if key.startswith('st_')]
+        self.args.display_stats = display_stats
 
-    # Use defaults if none were specified
-    if not tracked_stats:
-        tracked_stats = DEFAULT_STATS
+    def _build_from_stats(self) -> tuple:
+        # Build stats from --stats argument (i.e --stats size, mtime)
+        unique_stats = set()
+        for stat in self.args.stats:
+            stat = stat.rstrip(',')
+            for st_key in self.supported_stats.keys():
+                if stat.removeprefix('st_') == st_key.removeprefix('st_'):
+                    if st_key in unique_stats:
+                        raise ValueError(f'Duplicate stat: {stat}')
+                    # Make sure to add the full key name and not the short form
+                    unique_stats.add(st_key)
+                    break
+            else:
+                raise ValueError(f'Unsupported stat: {stat}')
 
-    return tuple(tracked_stats)
+        return tuple(unique_stats)
+
+    def _build_from_args(self) -> tuple:
+        # Build stats from individual arguments (i.e --size --mtime)
+        args = vars(self.args)
+        return tuple(key for key in args.keys() if key.startswith('st_'))
 
 
 def main():
-    args, parser = _parse_args()
+    args = ArgumentBuilder().parse_args()
 
-    # Parse stats to display
+    # Get file stats
     try:
-        if args.all:
-            displayed_stats = SUPPORTED_ATTRIBUTES.keys()
-        elif args.attributes:
-            displayed_stats = _build_from_attributes(args.attributes)
-        else:
-            displayed_stats = _build_from_args(vars(args))
-    except ValueError as e:
-        parser.error(e)
+        filestats = list(stat_path(args.path, args.display_stats, args.symlinks, args.dotfiles))
+    except OSError as e:
+        print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
+        return 1
 
-    try:
-        # Get the list of file stats
-        start_time = time.perf_counter()
-        filestats = list(file_stats(args.path, displayed_stats, args.symlinks, args.dotfiles))
-        elapsed_time = time.perf_counter() - start_time
+    if not filestats:
+        print('Found 0 files in the specified path.', file=sys.stderr)
+        return 1
 
-        # Display the header
-        print('path,', ', '.join(displayed_stats))
+    # Print results (TODO: write a nicer header)
+    print('path,', ', '.join(args.display_stats))
+    for stats in filestats:
+        print(', '.join(str(s) for s in stats))
 
-        # Print the paths and their stats
-        for stats in filestats:
-            print(', '.join([str(stat) for stat in stats]))
-
-        files = 'file' if len(filestats) == 1 else 'files'
-        print(f'\nFound {len(filestats):,} {files} in {elapsed_time:.04f} seconds.')
-
-    except (ValueError, OSError) as e:
-        print('Error:', e, file=sys.stderr)
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
