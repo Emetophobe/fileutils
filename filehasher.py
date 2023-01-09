@@ -10,69 +10,84 @@ import argparse
 import textwrap
 
 
+from findfiles import walk_tree
+
+
 # Default hashlib algorithm
 DEFAULT_ALGORITHM = 'sha3_256'
 
 
-def create_hash(filename, algorithm: str) -> str:
+def hash_file(path, algorithm):
     """ Hash a file using the specified algorithm. """
     hasher = hashlib.new(algorithm)
-    with open(filename, 'rb') as f:
-        while chunk := f.read(65536):
+    with open(path, 'rb') as infile:
+        while chunk := infile.read(65536):
             hasher.update(chunk)
     return hasher.hexdigest()
 
 
-def get_supported_algorithms() -> list[str]:
-    """ Return a list of available hashlib algorithms. """
+def hash_dir(path, algorithm, recursive=False):
+    """ Hash every file in a directory. Yields tuples of filepaths and their hashes. """
+    for entry in walk_tree(path, recursive=recursive):
+        yield entry.path, hash_file(entry.path, algorithm)
+
+
+def supported_algorithms():
+    """ Return the list of available algorithms. """
     return sorted(hashlib.algorithms_available)
 
 
-def get_formatted_algorithms() -> str:
-    """ Return the list of supported algorithms as a human readable string. """
-    supported_algorithms = ', '.join(get_supported_algorithms())
-    return textwrap.fill(supported_algorithms, 70)
+def format_algorithms():
+    """ Return the list of available algorithms as a human readable string. """
+    return textwrap.fill(', '.join(supported_algorithms()), 70)
 
 
-def main(args=None):
+def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
         description='Generate file hashes using Python\'s built-in hashlib module.',
-        epilog=f'Supported algorithms:\n\n{get_formatted_algorithms()}',
+        epilog=f'Supported algorithms:\n\n{format_algorithms()}',
     )
 
     parser.add_argument(
-        'filename',
-        help='file to hash',
+        'path',
+        type=os.path.abspath,  # force absolute path
+        help='file or directory path',
     )
 
     parser.add_argument(
-        '-a',
-        '--algorithm',
+        '-a', '--algorithm',
         metavar='algorithm',
         type=str.lower,  # force lowercase
         default=DEFAULT_ALGORITHM,
-        help='specify a hashlib algorithm (default: %(default)s)',
+        help='select a hashlib algorithm (default: %(default)s)',
     )
 
-    args = parser.parse_args(args)
+    parser.add_argument(
+        '-r', '--recursive',
+        action='store_true',
+        help='recurse directories (default: False)'
+    )
 
-    if not os.path.isfile(args.filename):
-        if os.path.isdir(args.filename):
-            parser.error('Invalid filename. Must be a file, not a directory.')
-        parser.error('Invalid filename.')
+    args = parser.parse_args()
 
     if args.algorithm not in hashlib.algorithms_available:
         parser.error('Invalid algorithm. Use --help for a list of supported algorithms.')
 
     try:
-        digest = create_hash(args.filename, args.algorithm)
-        print(f'{args.algorithm}: {digest}')
-        return 0
+        if os.path.isfile(args.path):
+            digest = hash_file(args.path, args.algorithm)
+            print(digest)
+
+        elif os.path.isdir(args.path):
+            for filename, digest in hash_dir(**vars(args)):
+                print(filename, digest, sep='\t')
+
+        else:
+            parser.error('Invalid path. No such file or directory.')
     except OSError as e:
-        print(f'Error reading {e.filename} ({e.strerror})')
-        return 1
+        print(f'Error reading {e.path} ({e.strerror})', file=sys.stderr)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()
