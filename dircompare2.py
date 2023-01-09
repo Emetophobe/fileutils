@@ -5,16 +5,26 @@
 
 import os
 import argparse
+import fnmatch
 
 
 def get_files(path, excludes=None):
     """ Get files in the given directory path. Yields relative file paths. """
     excludes = excludes or []
     for root, dirs, files in os.walk(path):
-        dirs[:] = [d for d in dirs if d not in excludes]
+        dirs[:] = [d for d in dirs if not filter_path(d, excludes)]
+        files[:] = [f for f in files if not filter_path(f, excludes)]
 
         for filename in files:
             yield os.path.relpath(os.path.join(root, filename), path)
+
+
+def filter_path(path, excludes):
+    """ Filter the path if it matches one of the exclude filters. """
+    for exclude in excludes:
+        if fnmatch.fnmatch(path, exclude):
+            return True
+    return False
 
 
 def compare_dirs(left, right, excludes=None):
@@ -49,7 +59,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('left', help='left directory')
     parser.add_argument('right', help='right directory')
-    parser.add_argument('-e', '--excludes', help='list of paths to exclude (wildcards are allowed)', nargs='*')
+    parser.add_argument('-e', '--excludes', help='list of paths to exclude', nargs='*')
     args = parser.parse_args()
 
     if not os.path.isdir(args.left):
