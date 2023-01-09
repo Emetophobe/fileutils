@@ -15,7 +15,7 @@ def walk_tree(path, excludes=None, dotfiles=False, symlinks=False, recursive=Tru
     """ Walk the directory path and yield file entries.
 
         Uses os.scandir() which is much faster than os.walk(), especially if you need
-        to stat files (os.scandir() caches stat() results in the DirEntry).
+        to stat files (os.scandir() caches stat() results in each DirEntry object).
     """
 
     if not excludes:
@@ -58,8 +58,8 @@ def walk_tree(path, excludes=None, dotfiles=False, symlinks=False, recursive=Tru
                 break
 
 
-def find_files(path, excludes=None, dotfiles=True, symlinks=False,
-               compiled_pattern=None, minsize=None, maxsize=None):
+def find_files(path, compiled_pattern=None, excludes=None, dotfiles=True,
+               symlinks=False, minsize=None, maxsize=None):
     """ Find files matching the specified filters. """
     for entry in walk_tree(path, excludes=excludes, dotfiles=dotfiles,
                            symlinks=symlinks, recursive=True):
@@ -78,6 +78,7 @@ def find_files(path, excludes=None, dotfiles=True, symlinks=False,
 
 
 def print_unicode_error(filename, error):
+    """ Print error message for filename with unrecognizable unicode characters. """
     bad_file = filename.encode('utf-8', 'replace').decode('utf-8')
     print(f'Error reading {bad_file} '
           f'(contains non-unicode characters)',
@@ -179,9 +180,13 @@ def main():
     # Find files
     try:
         start_time = time.perf_counter()
-        files = list(find_files(args.path, excludes=args.exclude, dotfiles=args.dotfiles,
-                                symlinks=args.symlinks, compiled_pattern=args.compiled_pattern,
-                                minsize=args.minsize, maxsize=args.maxsize))
+        files = list(find_files(args.path,
+                                compiled_pattern=args.compiled_pattern,
+                                excludes=args.exclude,
+                                dotfiles=args.dotfiles,
+                                symlinks=args.symlinks,
+                                minsize=args.minsize,
+                                maxsize=args.maxsize))
         elapsed_time = time.perf_counter() - start_time
     except OSError as e:
         print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
