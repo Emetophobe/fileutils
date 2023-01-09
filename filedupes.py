@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (C) 2019-2022 Mike Cunningham
+# Copyright (c) 2019-2023 Mike Cunningham
 # https://github.com/emetophobe/fileutils
 
 
@@ -11,7 +11,7 @@ import argparse
 
 from collections import defaultdict
 
-from findfiles import walk_tree
+from findfiles import walk_tree, print_unicode_error
 from filehasher import hash_file, format_algorithms
 
 
@@ -77,7 +77,7 @@ def main():
     )
 
     parser.add_argument(
-        '-s', '--symlinks',
+        '-l', '--symlinks',
         help='follow symlinks (default: False)',
         action='store_true'
     )
@@ -109,7 +109,10 @@ def main():
     for digest, files in dupes.items():
         print(f'\n{args.algorithm}: {digest}\n')
         for filename in files:
-            print(f'  {filename}')
+            try:
+                print(f'  {filename}')
+            except UnicodeError:
+                print_unicode_error(filename)
 
     print(f'\nFound {len(dupes):,} duplicate hashes in {elapsed_time:.2f} seconds.')
     return 0
