@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-# Copyright (c) 2019-2022 Mike Cunningham
+# Copyright (c) 2019-2023 Mike Cunningham
 # https://github.com/emetophobe/fileutils
-
 
 import os
 import sys
@@ -10,7 +9,7 @@ import argparse
 import textwrap
 
 
-from findfiles import walk_tree
+from findfiles import walk_tree, print_unicode_error
 
 
 # Default hashlib algorithm
@@ -76,13 +75,14 @@ def main():
 
     try:
         if os.path.isfile(args.path):
-            digest = hash_file(args.path, args.algorithm)
-            print(digest)
+            print(hash_file(args.path, args.algorithm))
 
         elif os.path.isdir(args.path):
             for filename, digest in hash_dir(**vars(args)):
-                print(filename, digest, sep='\t')
-
+                try:
+                    print(filename, digest)
+                except UnicodeError as error:
+                    print_unicode_error(filename, error)
         else:
             parser.error('Invalid path. No such file or directory.')
     except OSError as e:
