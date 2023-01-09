@@ -32,19 +32,19 @@ def hash_dir(path, algorithm, recursive=False):
 
 
 def supported_algorithms():
-    """ Return the list of available algorithms. """
+    """ Return the list of supported algorithms. """
     return sorted(hashlib.algorithms_available)
 
 
 def format_algorithms():
-    """ Return the list of available algorithms as a human readable string. """
+    """ Return the list of supported algorithms as a text-wrapped string. """
     return textwrap.fill(', '.join(supported_algorithms()), 70)
 
 
 def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
-        description='Generate file hashes using Python\'s built-in hashlib module.',
+        description="Generate file hashes using Python's built-in hashlib module.",
         epilog=f'Supported algorithms:\n\n{format_algorithms()}',
     )
 
@@ -80,7 +80,7 @@ def main():
         elif os.path.isdir(args.path):
             for filename, digest in hash_dir(**vars(args)):
                 try:
-                    print(filename, digest)
+                    print(digest, filename)
                 except UnicodeError as error:
                     print_unicode_error(filename, error)
         else:
