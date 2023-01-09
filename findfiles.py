@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2019-2022 Mike Cunningham
+# Copyright (c) 2019-2023 Mike Cunningham
 # https://github.com/emetophobe/fileutils
 
 
@@ -10,12 +10,59 @@ import argparse
 import fnmatch
 import re
 
-from filestats import walk_tree
+
+def walk_tree(path, excludes=None, dotfiles=False, symlinks=False, recursive=True):
+    """ Walk the directory path and yield file entries.
+
+        Uses os.scandir() which is much faster than os.walk(), especially if you need
+        to stat files (os.scandir() caches stat() results in the DirEntry).
+    """
+
+    if not excludes:
+        excludes = []
+
+    with os.scandir(path) as scanit:
+        while True:
+            try:
+                # Get the next DirEntry object
+                entry = next(scanit)
+
+                # Ignore dot files?
+                if not dotfiles and entry.name.startswith('.'):
+                    continue
+
+                # Exclude entry?
+                # TODO: use fnmatch?
+                if entry.path in excludes or entry.name in excludes:
+                    continue
+
+                # Is it a directory?
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=symlinks)
+                except OSError:  # same behaviour as os.path.isdir()
+                    is_dir = False
+
+                # Recursively search subdirs for files
+                if is_dir and recursive:
+                    yield from walk_tree(entry.path, excludes, dotfiles, symlinks, recursive)
+
+                # Yield file entries
+                elif entry.is_file(follow_symlinks=symlinks):
+                    yield entry
+
+            except OSError as e:
+                print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
+                continue
+
+            except StopIteration:
+                break
 
 
-def find_files(path, dotfiles=True, symlinks=False, compiled_pattern=None, minsize=None, maxsize=None):
-    """ Find files in the directory path matching the specified filters. """
-    for entry in walk_tree(path, dotfiles=dotfiles, symlinks=symlinks, recursive=True):
+def find_files(path, excludes=None, dotfiles=True, symlinks=False,
+               compiled_pattern=None, minsize=None, maxsize=None):
+    """ Find files matching the specified filters. """
+    for entry in walk_tree(path, excludes=excludes, dotfiles=dotfiles,
+                           symlinks=symlinks, recursive=True):
         # Pattern matching
         if compiled_pattern and not compiled_pattern.search(entry.path):
             continue
@@ -30,13 +77,27 @@ def find_files(path, dotfiles=True, symlinks=False, compiled_pattern=None, minsi
         yield entry.path
 
 
+def print_unicode_error(filename, error):
+    bad_file = filename.encode('utf-8', 'replace').decode('utf-8')
+    print(f'Error reading {bad_file} '
+          f'(contains non-unicode characters)',
+          file=sys.stderr)
+
+
 def parse_args():
-    parser = argparse.ArgumentParser()
+    desc = 'Find files using regular expressions or Unix-style wildcard pattern matching.'
+    parser = argparse.ArgumentParser(description=desc)
 
     parser.add_argument(
         'path',
         help='top level directory',
         type=os.path.abspath)  # use absolute paths
+
+    parser.add_argument(
+        '-e', '--exclude',
+        help='list of files or directories to exclude (default: None)',
+        nargs='*',
+    )
 
     parser.add_argument(
         '-d', '--dotfiles',
@@ -50,7 +111,7 @@ def parse_args():
 
     parser.add_argument(
         '-s', '--summary',
-        help='show file count and duration',
+        help='show summary and elapsed time',
         action='store_true')
 
     pattern_group = parser.add_mutually_exclusive_group()
@@ -85,16 +146,7 @@ def parse_args():
         help='set a maximum file size (in bytes)',
         type=int)
 
-    return (parser.parse_args(), parser)
-
-
-def convert_filename(value: str) -> str:
-    """Convert the filename to a version that can be safely displayed. """
-    return value.encode('utf-8', 'replace').decode('utf-8')
-
-
-def main():
-    args, parser = parse_args()
+    args = parser.parse_args()
 
     # Make sure the path is valid
     if not os.path.isdir(args.path):
@@ -110,19 +162,26 @@ def main():
 
     # Compile the optional pattern/regexp
     try:
-        compiled_pattern = None
+        args.compiled_pattern = None
         if args.pattern:
-            compiled_pattern = re.compile(fnmatch.translate(args.pattern))
+            args.compiled_pattern = re.compile(fnmatch.translate(args.pattern))
         elif args.regexp:
-            compiled_pattern = re.compile(args.regexp)
+            args.compiled_pattern = re.compile(args.regexp)
     except re.error:
         parser.error('Invalid pattern.')
+
+    return args
+
+
+def main():
+    args = parse_args()
 
     # Find files
     try:
         start_time = time.perf_counter()
-        files = list(find_files(args.path, args.dotfiles, args.symlinks,
-                                compiled_pattern, args.minsize, args.maxsize))
+        files = list(find_files(args.path, excludes=args.exclude, dotfiles=args.dotfiles,
+                                symlinks=args.symlinks, compiled_pattern=args.compiled_pattern,
+                                minsize=args.minsize, maxsize=args.maxsize))
         elapsed_time = time.perf_counter() - start_time
     except OSError as e:
         print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
@@ -132,10 +191,8 @@ def main():
     for filename in files:
         try:
             print(filename)
-        except UnicodeError:
-            print(f'Error reading {convert_filename(filename)} '
-                  f'(contains unrecognizable characters)',
-                  file=sys.stderr)
+        except UnicodeError as error:
+            print_unicode_error(filename, error)
 
     if args.summary:
         print(f'\nFound {len(files):,} files in {elapsed_time:.04f} seconds.')
