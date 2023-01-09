@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2019-2022 Mike Cunningham
+# Copyright (c) 2019-2023 Mike Cunningham
 # https://github.com/emetophobe/fileutils
 
 
@@ -8,8 +8,7 @@ import argparse
 
 
 class DirCompare(filecmp.dircmp):
-
-    # Simple dircmp subclass with a better report() method
+    """ Improved dircmp with nicer report(). """
 
     def report(self):
         if self.left_only:
@@ -53,8 +52,17 @@ if __name__ == '__main__':
     parser.add_argument('right', help='right directory')
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('-p', '--partial', help='Print report on self and immediate subdirs', action='store_true')
-    group.add_argument('-f', '--full', help='Print report on self and all subdirs recursively', action='store_true')
+    group.add_argument(
+        '-p', '--partial',
+        help='Print report on self and immediate subdirs',
+        action='store_true'
+    )
+
+    group.add_argument(
+        '-f', '--full',
+        help='Print report on self and all subdirs recursively',
+        action='store_true'
+    )
 
     args = parser.parse_args()
 

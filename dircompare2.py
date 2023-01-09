@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2019-2022 Mike Cunningham
+# Copyright (c) 2019-2023 Mike Cunningham
 # https://github.com/emetophobe/fileutils
 
 
