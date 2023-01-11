@@ -37,7 +37,7 @@ class DirCompare(filecmp.dircmp):
 
         if self.common_funny:
             print('Common funny cases:')
-            self.print_files(self.common_funny)
+            self._print_files(self.common_funny)
 
     def _print_files(self, files, indent='  '):
         """ Convenience method to print a list of files. """
