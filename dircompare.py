@@ -11,39 +11,21 @@ class DirCompare(filecmp.dircmp):
     """ Improved dircmp with nicer report(). """
 
     def report(self):
-        if self.left_only:
-            print('\nOnly in', self.left, ':')
-            self._print_files(self.left_only)
+        """ Custom report method with nicer output. """
+        self._print_files(f'Only in {self.left}', self.left_only)
+        self._print_files(f'Only in {self.right}', self.right_only)
+        self._print_files('Identical files', self.same_files)
+        self._print_files('Differing files', self.diff_files)
+        self._print_files('Trouble with common files', self.funny_files)
+        self._print_files('Common subdirectories', self.common_dirs)
+        self._print_files('Common funny cases', self.common_files)
 
-        if self.right_only:
-            print('\nOnly in', self.right, ':')
-            self._print_files(self.right_only)
-
-        if self.same_files:
-            print('Identical files:')
-            self._print_files(self.same_files)
-
-        if self.diff_files:
-            print('Differing files:')
-            self._print_files(self.diff_files)
-
-        if self.funny_files:
-            print('Trouble with common files:')
-            self._print_files(self.funny_files)
-
-        if self.common_dirs:
-            print('Common subdirectories:')
-            self._print_files(self.common_dirs)
-
-        if self.common_funny:
-            print('Common funny cases:')
-            self._print_files(self.common_funny)
-
-    def _print_files(self, files, indent='  '):
-        """ Convenience method to print a list of files. """
-        files.sort()
-        for line in files:
-            print(indent, line)
+    def _print_files(self, header, files):
+        # Convenience method to print a header and a list of files
+        if files:
+            print(f'\n{header}:')
+            for path in sorted(files):
+                print(f'  {path}')
 
 
 if __name__ == '__main__':
