@@ -20,11 +20,8 @@ def get_files(path, excludes=None):
 
 
 def filter_path(path, excludes):
-    """ Filter the path if it matches one of the exclude filters. """
-    for exclude in excludes:
-        if fnmatch.fnmatch(path, exclude):
-            return True
-    return False
+    """ Filter paths based on the list of exclude filters. """
+    return any(fnmatch.fnmatch(path, exclude) for exclude in excludes)
 
 
 def compare_dirs(left, right, excludes=None):
