@@ -64,9 +64,9 @@ if __name__ == '__main__':
     elif not os.path.isdir(args.right):
         parser.error(f'Invalid directory: {args.right}')
     elif os.path.abspath(args.left) == os.path.abspath(args.right):
-        parser.error('Two different directory paths are required.')
+        parser.error('Two different directories are required.')
 
     try:
         compare_dirs(args.left, args.right, args.excludes)
     except OSError as e:
-        print('Error reading file {} ({})'.format(e.filename, e.strerror))
+        print('Error reading {} ({})'.format(e.filename, e.strerror))
