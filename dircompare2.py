@@ -35,13 +35,13 @@ def compare_dirs(left, right, excludes=None):
     left_only = [f for f in left_files if f not in shared_files]
     right_only = [f for f in right_files if f not in shared_files]
 
-    print('{:,} shared files'.format(len(shared_files)))
+    print(f'{len(shared_files):,} shared files')
     print_files('=', shared_files)
 
-    print('{:,} files unique to {}'.format(len(left_only), left))
+    print(f'{len(left_only):,} files unique to {left}')
     print_files('>', left_only)
 
-    print('{:,} files unique to {}'.format(len(right_only), right))
+    print(f'{len(right_only):,} files unique to {right}')
     print_files('<', right_only)
 
 
@@ -64,9 +64,9 @@ if __name__ == '__main__':
     elif not os.path.isdir(args.right):
         parser.error(f'Invalid directory: {args.right}')
     elif os.path.abspath(args.left) == os.path.abspath(args.right):
-        parser.error('Two different directories are required.')
+        parser.error('The directory paths are the same.')
 
     try:
         compare_dirs(args.left, args.right, args.excludes)
     except OSError as e:
-        print('Error reading {} ({})'.format(e.filename, e.strerror))
+        print(f'Error reading {e.filename} ({e.strerror})')
