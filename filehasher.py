@@ -2,42 +2,81 @@
 # Copyright (c) 2019-2023 Mike Cunningham
 # https://github.com/emetophobe/fileutils
 
+
 import os
 import sys
 import hashlib
 import argparse
 import textwrap
-
-
-from findfiles import walk_tree, print_unicode_error
+from findfiles import walk_tree
 
 
 # Default hashlib algorithm
 DEFAULT_ALGORITHM = 'sha3_256'
 
 
-def hash_file(path, algorithm):
-    """ Hash a file using the specified algorithm. """
-    hasher = hashlib.new(algorithm)
+def hash_file(path, algorithm='sha3_256', buffer_size=262144):
+    """ Hash a file and return its hex digest.
+
+    See hashlib.algorithms_available and hashlib.algorithms_guaranteed  for a
+    list of supported algorithms.
+
+    Example command (run from a shell or command line):
+
+    `python -c "import hashlib;print(hashlib.algorithms_guaranteed)"`
+
+    Args:
+        path (str | Path): the file path.
+        algorithm (str, optional): a hashlib algorithm. Defaults to "sha3_256".
+        buffer_size (int, optional): read buffer size. Defaults to 262144.
+
+    Returns:
+        str: the hex digest string.
+    """
+
+    if not algorithm:
+        algorithm = DEFAULT_ALGORITHM
+
     with open(path, 'rb') as infile:
-        while chunk := infile.read(65536):
-            hasher.update(chunk)
+        hasher = hashlib.new(algorithm)
+
+        # This is taken directly from file_digest() which was added in 3.11
+        # Source: https://github.com/python/cpython/blob/3.11/Lib/hashlib.py#L292-L300
+
+        buffer = bytearray(buffer_size)
+        view = memoryview(buffer)
+
+        while True:
+            size = infile.readinto(buffer)
+            if not size:
+                break
+            hasher.update(view[:size])
+
     return hasher.hexdigest()
 
 
-def hash_dir(path, algorithm, recursive=False):
-    """ Hash every file in a directory. Yields tuples of filepaths and their hashes. """
+def hash_dir(path, algorithm='sha3_256', recursive=True):
+    """ Hash every file in a directory. Yields tuples of filepaths and their hashes.
+
+    Args:
+        path (str | Path): the top-level directory path.
+        algorithm (str): specify a hashlib algorithm. Defaults to 'sha3_256'.
+        recursive (bool, optional): includes files in subdirectories. Defaults to True.
+
+    Yields:
+        tuple[str, str]: tuple of the path and its hex digest.
+    """
     for entry in walk_tree(path, recursive=recursive):
-        yield entry.path, hash_file(entry.path, algorithm)
+        yield (entry.path, hash_file(entry.path, algorithm))
 
 
 def supported_algorithms():
-    """ Return the list of supported algorithms. """
+    """ Returns a list of supported algorithms. """
     return sorted(hashlib.algorithms_available)
 
 
 def format_algorithms():
-    """ Return the list of supported algorithms as a text-wrapped string. """
+    """ Returns a list of supported algorithms as a text-wrapped string. """
     return textwrap.fill(', '.join(supported_algorithms()), 70)
 
 
@@ -65,7 +104,7 @@ def main():
     parser.add_argument(
         '-r', '--recursive',
         action='store_true',
-        help='recurse directories (default: False)'
+        help='recursively search subdirs (default: False)'
     )
 
     args = parser.parse_args()
@@ -79,12 +118,9 @@ def main():
 
         elif os.path.isdir(args.path):
             for filename, digest in hash_dir(**vars(args)):
-                try:
-                    print(digest, filename)
-                except UnicodeError as error:
-                    print_unicode_error(filename, error)
+                print(digest, filename)
         else:
-            parser.error('Invalid path. No such file or directory.')
+            parser.error('Invalid path (not a file or directory)')
     except OSError as e:
         print(f'Error reading {e.path} ({e.strerror})', file=sys.stderr)
 
