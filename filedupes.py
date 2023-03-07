@@ -8,20 +8,38 @@ import sys
 import time
 import hashlib
 import argparse
-
 from collections import defaultdict
-
-from findfiles import walk_tree, print_unicode_error
 from filehasher import hash_file, format_algorithms
+from findfiles import walk_tree
 
 
 # Default hashlib algorithm
 DEFAULT_ALGORITHM = 'sha3_256'
 
 
-def find_dupes(directory, algorithm=None, excludes=None, dotfiles=False, symlinks=False):
-    """ Find duplicate files using a hashlib algorithm. """
+def find_dupes(directory, algorithm='sha3_256', excludes=None,
+               dotfiles=False, symlinks=False):
+    """ Find duplicate files by comparing file hashes.
 
+    Args:
+        directory (str | Path):
+            Top level search directory.
+
+        algorithm (str, optional):
+            A hashlib algorithm. Defaults to 'sha3_256'.
+
+        excludes (list, optional):
+            List of files and directories to exclude. Defaults to None.
+
+        dotfiles (bool, optional):
+            Include dotfiles and directories. Defaults to False.
+
+        symlinks (bool, optional):
+            Follow symbolic links. Defaults to False.
+
+    Returns:
+        dict[str, list[str]]: a dictionary of hashes and duplicate file paths.
+    """
     if not algorithm:
         algorithm = DEFAULT_ALGORITHM
 
@@ -44,7 +62,7 @@ def find_dupes(directory, algorithm=None, excludes=None, dotfiles=False, symlink
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Find duplicate files using one of Python's built-in hashing algorithm.",
+        description="Find duplicate files using Python's hashlib module.",
         epilog=f'List of supported algorithms:\n\n{format_algorithms()}',
         formatter_class=argparse.RawTextHelpFormatter
     )
@@ -109,10 +127,7 @@ def main():
     for digest, files in dupes.items():
         print(f'\n{args.algorithm}: {digest}\n')
         for filename in files:
-            try:
-                print(f'  {filename}')
-            except UnicodeError:
-                print_unicode_error(filename)
+            print(f'  {filename}')
 
     print(f'\nFound {len(dupes):,} duplicate hashes in {elapsed_time:.2f} seconds.')
     return 0
