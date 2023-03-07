@@ -5,17 +5,44 @@
 
 import os
 import sys
-import time
 import argparse
 import fnmatch
 import re
 
 
-def walk_tree(path, excludes=None, dotfiles=False, symlinks=False, recursive=True):
-    """ Walk the directory path and yield file entries.
+def walk_tree(path, excludes=None, dotfiles=False, symlinks=False,
+              recursive=True, onerror=None):
+    """ Walk a directory tree and yield file entries.
 
-        Uses os.scandir() which is much faster than os.walk(), especially if you need
-        to stat files (os.scandir() caches stat() results in each DirEntry object).
+    Uses os.scandir() which is 4-5x faster than os.walk().
+
+    Entries are meant to be short lived and not stored in a data structure.
+    If you need up to date file metadata call os.stat(entry.path)
+
+    Args:
+        path (str):
+            Top level search directory.
+
+        excludes (list[str], optional): Defaults to None.
+            List of filenames or directories to exclude.
+
+        dotfiles (bool, optional): Defaults to False.
+            Include dotfiles and directories (paths that start with a ".")
+
+        symlinks (bool, optional): Defaults to False.
+            Follow symbolic links.
+
+        recursive (bool, optional): Defaults to True
+            Recursively search subdirectories.
+
+        onerror (Callable, optional): Defaults to None.
+            Specify a callback function for handling OSError exceptions.
+
+    Raises:
+        OSError: if path could not be read.
+
+    Yields:
+        os.DirEntry: a file entry with path and cached stat result.
     """
 
     if not excludes:
@@ -23,46 +50,93 @@ def walk_tree(path, excludes=None, dotfiles=False, symlinks=False, recursive=Tru
 
     with os.scandir(path) as scanit:
         while True:
+            # Fetch all entries
             try:
-                # Get the next DirEntry object
-                entry = next(scanit)
-
-                # Ignore dot files?
-                if not dotfiles and entry.name.startswith('.'):
-                    continue
-
-                # Exclude entry?
-                # TODO: use fnmatch?
-                if entry.path in excludes or entry.name in excludes:
-                    continue
-
-                # Is it a directory?
-                try:
-                    is_dir = entry.is_dir(follow_symlinks=symlinks)
-                except OSError:  # same behaviour as os.path.isdir()
-                    is_dir = False
-
-                # Recursively search subdirs for files
-                if is_dir and recursive:
-                    yield from walk_tree(entry.path, excludes, dotfiles, symlinks, recursive)
-
-                # Yield file entries
-                elif entry.is_file(follow_symlinks=symlinks):
-                    yield entry
-
-            except OSError as e:
-                print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
-                continue
-
+                entry: os.DirEntry = next(scanit)
             except StopIteration:
                 break
 
+            # Ignore dot files?
+            if not dotfiles and entry.name.startswith('.'):
+                continue
 
-def find_files(path, compiled_pattern=None, excludes=None, dotfiles=True,
-               symlinks=False, minsize=None, maxsize=None):
-    """ Find files matching the specified filters. """
-    for entry in walk_tree(path, excludes=excludes, dotfiles=dotfiles,
-                           symlinks=symlinks, recursive=True):
+            # Exclude entry?
+            # TODO: use fnmatch instead?
+            if entry.path in excludes or entry.name in excludes:
+                continue
+
+            # Is it a directory?
+            try:
+                is_dir = entry.is_dir()
+            except OSError:  # same behaviour as os.path.isdir()
+                is_dir = False
+
+            # Is it a symlink?
+            try:
+                is_symlink = entry.is_symlink()
+            except OSError:  # same behaviour as os.path.isdir()
+                is_symlink = False
+
+            if is_symlink and not symlinks:
+                continue
+
+            try:
+                # Recursively search subdirs for files
+                if is_dir and recursive:
+                    yield from walk_tree(entry.path, excludes, dotfiles,
+                                         symlinks, recursive, onerror)
+                # Yield file entries
+                elif entry.is_file():
+                    yield entry
+
+            except OSError as e:
+                if onerror:
+                    onerror(e)
+
+
+def find_files(path, compiled_pattern=None, excludes=None, minsize=None, maxsize=None,
+               onerror=None, dotfiles=True, symlinks=False, recursive=True):
+    """ Find files matching the search parameters.
+
+    Exceptions are silently ignored unless an onerror callback is specified.
+
+    Args:
+        path (str | os.PathLike):
+            Top level search directory.
+
+        compiled_pattern (re.Pattern, optional): Defaults to None.
+            Match files based on a compiled regular expression.
+
+        excludes (list, optional): Defaults to None.
+            List of files or directories to exclude.
+
+        minsize (int, optional): Defaults to None.
+            Minimum file size in bytes.
+
+        maxsize (int, optional): Defaults to None.
+            Maximum file size in bytes.
+
+        onerror (Callable, optional): Defaults to None
+            Callback function used to handle OSError exceptions.
+
+        dotfiles (bool, optional): Defaults to True.
+            Include dotfiles and directories.
+
+        symlinks (bool, optional): Defaults to False.
+            Follow symbolic links.
+
+        recursive (bool, optional): Defaults to True
+            Recursively search subdirectories.
+
+    Yields:
+        os.DirEntry: File entry with cached stat results.
+    """
+    for entry in walk_tree(path,
+                           excludes=excludes,
+                           dotfiles=dotfiles,
+                           symlinks=symlinks,
+                           onerror=onerror,
+                           recursive=recursive):
         # Pattern matching
         if compiled_pattern and not compiled_pattern.search(entry.path):
             continue
@@ -77,7 +151,7 @@ def find_files(path, compiled_pattern=None, excludes=None, dotfiles=True,
         yield entry.path
 
 
-def print_unicode_error(filename, error):
+def print_unicode_error(filename, _error):
     """ Print error message for filename with unrecognizable unicode characters. """
     bad_file = filename.encode('utf-8', 'replace').decode('utf-8')
     print(f'Error reading {bad_file} '
@@ -85,8 +159,8 @@ def print_unicode_error(filename, error):
           file=sys.stderr)
 
 
-def parse_args():
-    desc = 'Find files using regular expressions or Unix-style wildcard pattern matching.'
+def main():
+    desc = 'Find files using regular expressions or wildcard pattern matching.'
     parser = argparse.ArgumentParser(description=desc)
 
     parser.add_argument(
@@ -97,6 +171,7 @@ def parse_args():
     parser.add_argument(
         '-e', '--exclude',
         help='list of files or directories to exclude (default: None)',
+        dest='excludes',
         nargs='*',
     )
 
@@ -110,18 +185,13 @@ def parse_args():
         help='follow symbolic links (default: False)',
         action='store_true')
 
-    parser.add_argument(
-        '-s', '--summary',
-        help='show summary and elapsed time',
-        action='store_true')
-
     pattern_group = parser.add_mutually_exclusive_group()
 
     pattern_group.add_argument(
         '-f', '--fnmatch',
         dest='pattern',
         help='unix-style filename pattern matching. '
-        '(Quotes are required for wildcards; i.e "*.py")',
+        'Use double quotes for wildcards; i.e "*.py"',
         default=None)
 
     pattern_group.add_argument(
@@ -133,18 +203,18 @@ def parse_args():
 
     size_group.add_argument(
         '-x', '--size',
-        help='limit files to an exact size (in bytes)',
+        help='exact file size in bytes',
         dest='exactsize',
         type=int)
 
     size_group.add_argument(
         '-n', '--minsize',
-        help='set a minimum file size (in bytes)',
+        help='minimum file size in bytes',
         type=int)
 
     size_group.add_argument(
         '-m', '--maxsize',
-        help='set a maximum file size (in bytes)',
+        help='maximum file size in bytes',
         type=int)
 
     args = parser.parse_args()
@@ -153,41 +223,31 @@ def parse_args():
     if not os.path.isdir(args.path):
         parser.error('Invalid search path. Must be a valid directory.')
 
+    # Set exact size
     if args.exactsize:
-        # Don't allow minsize or maxsize to be used with exactsize
         if args.minsize is not None or args.maxsize is not None:
-            parser.error('cannot use --size with --minsize/--maxsize')
-
-        # Set the exact size
+            parser.error('Cannot use --size with --minsize/--maxsize')
         args.minsize = args.maxsize = args.exactsize
 
     # Compile the optional pattern/regexp
     try:
-        args.compiled_pattern = None
+        compiled_pattern = None
         if args.pattern:
-            args.compiled_pattern = re.compile(fnmatch.translate(args.pattern))
+            compiled_pattern = re.compile(fnmatch.translate(args.pattern))
         elif args.regexp:
-            args.compiled_pattern = re.compile(args.regexp)
+            compiled_pattern = re.compile(args.regexp)
     except re.error:
         parser.error('Invalid pattern.')
 
-    return args
-
-
-def main():
-    args = parse_args()
-
     # Find files
     try:
-        start_time = time.perf_counter()
         files = list(find_files(args.path,
-                                compiled_pattern=args.compiled_pattern,
-                                excludes=args.exclude,
+                                compiled_pattern=compiled_pattern,
+                                excludes=args.excludes,
                                 dotfiles=args.dotfiles,
                                 symlinks=args.symlinks,
                                 minsize=args.minsize,
                                 maxsize=args.maxsize))
-        elapsed_time = time.perf_counter() - start_time
     except OSError as e:
         print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
         return 1
@@ -198,9 +258,6 @@ def main():
             print(filename)
         except UnicodeError as error:
             print_unicode_error(filename, error)
-
-    if args.summary:
-        print(f'\nFound {len(files):,} files in {elapsed_time:.04f} seconds.')
 
     return 0
 
