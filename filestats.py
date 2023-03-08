@@ -28,10 +28,17 @@ def stat_path(path, dotfiles=True, recursive=True, symlinks=False):
     """ Stat a single file or an entire directory. Returns a generator.
 
     Args:
-        path (str | Path): the file or directory path.
-        dotfiles (bool): include dotfiles and directories. Defaults to True.
-        recursive (bool): recursively search subdirectories. Defaults to True.
-        symlinks (bool): follow symbolic links. Defaults to False.
+        path (str | Path):
+            The file or directory path.
+
+        dotfiles (bool, optional):
+            Include dotfiles and directories. Defaults to True.
+
+        recursive (bool, optional):
+            Recursively search subdirectories. Defaults to True.
+
+        symlinks (bool, optional):
+            Follow symbolic links. Defaults to False.
 
     Raises:
         ValueError: if path is invalid.
@@ -51,10 +58,17 @@ def stat_dir(path, dotfiles=True, recursive=True, symlinks=False):
     """ Walk the directory tree and yield tuples of files and their stats.
 
     Args:
-        path (str | Path): the file or directory path.
-        dotfiles (bool): include dotfiles and directories. Defaults to True.
-        recursive (bool): recursively search subdirectories. Defaults to True.
-        symlinks (bool): follow symbolic links. Defaults to False.
+        path (str | Path):
+            The file or directory path.
+
+        dotfiles (bool, optional):
+            Include dotfiles and directories. Defaults to True.
+
+        recursive (bool, optional):
+            Recursively search subdirectories. Defaults to True.
+
+        symlinks (bool, optional):
+            Follow symbolic links. Defaults to False.
 
     Raises:
         ValueError: if path is invalid.
