@@ -103,7 +103,7 @@ def find_files(path,
                dotfiles=False,
                symlinks=False,
                onerror=None):
-    """ Find files matching the search parameters.
+    """ Find files matching the given search parameters.
 
     Exceptions are silently ignored unless an onerror callback is specified.
 
@@ -169,8 +169,7 @@ def main():
         '-e', '--exclude',
         help='list of files or directories to exclude (default: None)',
         dest='excludes',
-        nargs='*',
-    )
+        nargs='*')
 
     parser.add_argument(
         '-d', '--dotfiles',
