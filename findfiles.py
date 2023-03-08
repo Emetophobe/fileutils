@@ -248,11 +248,8 @@ def main():
             except UnicodeError as error:
                 print('UnicodeError:', error)
     except OSError as e:
-        print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
-        return 1
-
-    return 0
+        sys.exit(f'Error reading {e.filename} ({e.strerror})')
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()
