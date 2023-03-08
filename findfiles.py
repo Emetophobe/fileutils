@@ -10,8 +10,8 @@ import fnmatch
 import re
 
 
-def walk_tree(path, excludes=None, dotfiles=False, symlinks=False,
-              recursive=True, onerror=None):
+def walk_tree(path, excludes=None, recursive=True, dotfiles=False,
+              symlinks=False, onerror=None):
     """ Walk a directory tree and yield file entries.
 
     Uses os.scandir() which is 4-5x faster than os.walk().
@@ -20,26 +20,26 @@ def walk_tree(path, excludes=None, dotfiles=False, symlinks=False,
     If you need up to date file metadata call os.stat(entry.path)
 
     Args:
-        path (str):
+        path (str | os.PathLike):
             Top level search directory.
 
-        excludes (list[str], optional): Defaults to None.
-            List of filenames or directories to exclude.
+        excludes (list[str], optional):
+            List of files or directories to exclude. Defaults to None.
 
-        dotfiles (bool, optional): Defaults to False.
-            Include dotfiles and directories (paths that start with a ".")
+        recursive (bool, optional):
+            Recursively search subdirectories. Defaults to True.
 
-        symlinks (bool, optional): Defaults to False.
-            Follow symbolic links.
+        dotfiles (bool, optional):
+            Include dotfiles and directories. Defaults to False.
 
-        recursive (bool, optional): Defaults to True
-            Recursively search subdirectories.
+        symlinks (bool, optional):
+            Follow symbolic links. Defaults to False.
 
-        onerror (Callable, optional): Defaults to None.
-            Specify a callback function for handling OSError exceptions.
+        onerror (Callable, optional):
+            Callback function to handle OSError exceptions. Defaults to None.
 
     Raises:
-        OSError: if path could not be read.
+        OSError: if a path could not be read.
 
     Yields:
         os.DirEntry: a file entry with path and cached stat result.
@@ -83,8 +83,8 @@ def walk_tree(path, excludes=None, dotfiles=False, symlinks=False,
             try:
                 # Recursively search subdirs for files
                 if is_dir and recursive:
-                    yield from walk_tree(entry.path, excludes, dotfiles,
-                                         symlinks, recursive, onerror)
+                    yield from walk_tree(entry.path, excludes, recursive,
+                                         dotfiles, symlinks, onerror)
                 # Yield file entries
                 elif entry.is_file():
                     yield entry
@@ -94,8 +94,15 @@ def walk_tree(path, excludes=None, dotfiles=False, symlinks=False,
                     onerror(e)
 
 
-def find_files(path, compiled_pattern=None, excludes=None, minsize=None, maxsize=None,
-               onerror=None, dotfiles=True, symlinks=False, recursive=True):
+def find_files(path,
+               compiled_pattern=None,
+               excludes=None,
+               minsize=None,
+               maxsize=None,
+               recursive=True,
+               dotfiles=False,
+               symlinks=False,
+               onerror=None):
     """ Find files matching the search parameters.
 
     Exceptions are silently ignored unless an onerror callback is specified.
@@ -104,39 +111,37 @@ def find_files(path, compiled_pattern=None, excludes=None, minsize=None, maxsize
         path (str | os.PathLike):
             Top level search directory.
 
-        compiled_pattern (re.Pattern, optional): Defaults to None.
-            Match files based on a compiled regular expression.
+        compiled_pattern (re.Pattern, optional):
+            Match files based on a compiled regular expression. Defaults to None.
 
-        excludes (list, optional): Defaults to None.
-            List of files or directories to exclude.
+        excludes (list[str], optional):
+            List of files or directories to exclude. Defaults to None.
 
-        minsize (int, optional): Defaults to None.
-            Minimum file size in bytes.
+        minsize (int, optional):
+            Minimum file size in bytes. Defaults to None.
 
-        maxsize (int, optional): Defaults to None.
-            Maximum file size in bytes.
+        maxsize (int, optional):
+            Maximum file size in bytes. Defaults to None.
 
-        onerror (Callable, optional): Defaults to None
-            Callback function used to handle OSError exceptions.
+        recursive (bool, optional):
+            Recursively search subdirectories. Defaults to True.
 
-        dotfiles (bool, optional): Defaults to True.
-            Include dotfiles and directories.
+        dotfiles (bool, optional):
+            Include dotfiles and directories. Defaults to False.
 
-        symlinks (bool, optional): Defaults to False.
-            Follow symbolic links.
+        symlinks (bool, optional):
+            Follow symbolic links. Defaults to False.
 
-        recursive (bool, optional): Defaults to True
-            Recursively search subdirectories.
+        onerror (Callable, optional):
+            Callback function to handle OSError exceptions. Defaults to None.
+
+    Raises:
+        OSError: if a path could not be read.
 
     Yields:
         os.DirEntry: File entry with cached stat results.
     """
-    for entry in walk_tree(path,
-                           excludes=excludes,
-                           dotfiles=dotfiles,
-                           symlinks=symlinks,
-                           onerror=onerror,
-                           recursive=recursive):
+    for entry in walk_tree(path, excludes, recursive, dotfiles, symlinks, onerror):
         # Pattern matching
         if compiled_pattern and not compiled_pattern.search(entry.path):
             continue
@@ -151,16 +156,8 @@ def find_files(path, compiled_pattern=None, excludes=None, minsize=None, maxsize
         yield entry.path
 
 
-def print_unicode_error(filename, _error):
-    """ Print error message for filename with unrecognizable unicode characters. """
-    bad_file = filename.encode('utf-8', 'replace').decode('utf-8')
-    print(f'Error reading {bad_file} '
-          f'(contains non-unicode characters)',
-          file=sys.stderr)
-
-
 def main():
-    desc = 'Find files using regular expressions or wildcard pattern matching.'
+    desc = 'Find files using regular expressions or filename pattern matching.'
     parser = argparse.ArgumentParser(description=desc)
 
     parser.add_argument(
@@ -224,40 +221,36 @@ def main():
         parser.error('Invalid search path. Must be a valid directory.')
 
     # Set exact size
-    if args.exactsize:
+    if args.exactsize is not None:
         if args.minsize is not None or args.maxsize is not None:
             parser.error('Cannot use --size with --minsize/--maxsize')
         args.minsize = args.maxsize = args.exactsize
 
+    del args.exactsize
+
     # Compile the optional pattern/regexp
     try:
-        compiled_pattern = None
         if args.pattern:
-            compiled_pattern = re.compile(fnmatch.translate(args.pattern))
+            args.compiled_pattern = re.compile(fnmatch.translate(args.pattern))
         elif args.regexp:
-            compiled_pattern = re.compile(args.regexp)
+            args.compiled_pattern = re.compile(args.regexp)
+        else:
+            args.compiled_pattern = None
     except re.error:
         parser.error('Invalid pattern.')
 
+    del args.pattern, args.regexp
+
     # Find files
     try:
-        files = list(find_files(args.path,
-                                compiled_pattern=compiled_pattern,
-                                excludes=args.excludes,
-                                dotfiles=args.dotfiles,
-                                symlinks=args.symlinks,
-                                minsize=args.minsize,
-                                maxsize=args.maxsize))
+        for filename in find_files(**vars(args)):
+            try:
+                print(filename)
+            except UnicodeError as error:
+                print('UnicodeError:', error)
     except OSError as e:
         print(f'Error reading {e.filename} ({e.strerror})', file=sys.stderr)
         return 1
-
-    # Print results
-    for filename in files:
-        try:
-            print(filename)
-        except UnicodeError as error:
-            print_unicode_error(filename, error)
 
     return 0
 
